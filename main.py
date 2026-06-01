@@ -11,11 +11,18 @@ import os
 from matplotlib import font_manager as _fm
 
 def _setup_japanese_font():
-    # ビルド時にダウンロードしたフォント、なければシステムフォントを探す
+    import platform
+    if platform.system() == "Darwin":
+        # macOS: ヒラギノはシステムフォントとして常に利用可能
+        plt.rcParams["font.family"] = ["Hiragino Sans", "Hiragino Maru Gothic Pro", "AppleGothic"]
+        return
+    # Linux (Render等): apt install fonts-noto-cjk でインストールされるパスを探す
     candidates = [
-        os.path.join(os.path.dirname(__file__), "NotoSansJP.otf"),
         "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf",
         "/usr/share/fonts/truetype/noto/NotoSansCJKjp-Regular.otf",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/opentype/noto/NotoSansCJKjp-Regular.otf",
     ]
     for path in candidates:
         if os.path.exists(path):
@@ -109,84 +116,61 @@ async def generate(
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+    # matrix shape: (n_rows=回答カテゴリ, n_cols=グループ)
+    # 横マリメッコ: グループが縦に並び、各帯が横に100%積み上がる
+    # 帯の高さ = グループのn比率、帯の各セグメント幅 = グループ内の構成比率
     n_rows, n_cols = matrix.shape
-    col_totals = matrix.sum(axis=0)
+    col_totals = matrix.sum(axis=0)       # 各グループのn
     grand_total = col_totals.sum()
-    col_widths = col_totals / grand_total          # 0–1, sum == 1
-    col_props = matrix / col_totals[np.newaxis, :]  # proportions within column
+    bar_heights = col_totals / grand_total  # 各帯の高さ（n比率）
+    col_props = matrix / col_totals[np.newaxis, :]  # グループ内構成比率
 
     colors = _pick_colors(n_rows)
 
-    # ---- figure size (auto-scale with number of columns) ------------------
-    fig_w = max(12, n_cols * 2.8)
-    fig_h = 8.0
+    # ---- figure size（グループ数に応じて高さを調整）-----------------------
+    fig_w = 12.0
+    fig_h = max(5.0, n_cols * 1.6)
     fig, ax = plt.subplots(figsize=(fig_w, fig_h))
     fig.patch.set_facecolor("white")
 
-    # ---- draw bars --------------------------------------------------------
-    col_positions = []   # (x_left, width) for each column
-    x = 0.0
+    # ---- 帯を下から上へ描画 -----------------------------------------------
+    # グループをy軸下から積み上げる（最初のグループが一番上になるよう逆順）
+    bar_positions = []   # (y_bottom, height) for each group
+    y = 0.0
+    for j in range(n_cols - 1, -1, -1):   # 下から上へ（上が最初のグループ）
+        bar_positions.insert(0, (y, bar_heights[j]))
+        y += bar_heights[j]
+
     for j in range(n_cols):
-        w = col_widths[j]
-        col_positions.append((x, w))
-        y = 0.0
+        y_bottom, bh = bar_positions[j]
+        x = 0.0
         for i in range(n_rows):
-            h = col_props[i, j]
+            sw = col_props[i, j]   # セグメント幅
             c = colors[i]
             ax.add_patch(
-                mpatches.Rectangle((x, y), w, h, fc=c, ec="white", lw=1.5, zorder=2)
+                mpatches.Rectangle((x, y_bottom), sw, bh,
+                                   fc=c, ec="white", lw=1.5, zorder=2)
             )
-            # % inside cell (skip if too small to read)
-            if h > 0.04:
+            # % ラベル（セルが小さすぎる場合は非表示）
+            if sw > 0.05 and bh > 0.03:
                 text_color = "white" if _luminance(c) < 0.38 else "#222222"
                 ax.text(
-                    x + w / 2, y + h / 2,
-                    f"{h * 100:.1f}%",
+                    x + sw / 2, y_bottom + bh / 2,
+                    f"{sw * 100:.1f}%",
                     ha="center", va="center",
                     fontsize=9, color=text_color, fontweight="bold", zorder=3,
                 )
-            y += h
-        x += w
+            x += sw
 
-    # ---- n labels immediately to the left of each column ------------------
-    GAP = 0.012
-    for j, (cx, cw) in enumerate(col_positions):
-        ax.text(
-            cx - GAP, 0.5,
-            f"n={int(col_totals[j])}",
-            ha="right", va="center", fontsize=9, color="#444444", zorder=3,
-        )
+        # グループラベル（左側）
+        ax.text(-0.01, y_bottom + bh / 2, col_headers[j],
+                ha="right", va="center", fontsize=10, zorder=3)
 
-    # ---- column headers (X axis) ------------------------------------------
-    rotate = max(len(h) for h in col_headers) > 8
-    for j, (cx, cw) in enumerate(col_positions):
-        ax.text(
-            cx + cw / 2, -0.035,
-            col_headers[j],
-            ha="center", va="top", fontsize=10,
-            rotation=30 if rotate else 0,
-            rotation_mode="anchor",
-        )
+        # n ラベル（グループラベルの下）
+        ax.text(-0.01, y_bottom + bh / 2 - 0.025, f"n={int(col_totals[j])}",
+                ha="right", va="top", fontsize=8, color="#666666", zorder=3)
 
-    # ---- axis labels -------------------------------------------------------
-    y_label_text = ylabel if ylabel else "【ここにY軸ラベルを入力】"
-    y_label_color = "#111111" if ylabel else "#BBBBBB"
-    ax.text(
-        -0.13, 0.5, y_label_text,
-        ha="center", va="center", rotation=90, fontsize=10,
-        color=y_label_color, style="italic" if not ylabel else "normal",
-    )
-
-    x_label_text = xlabel if xlabel else "【ここにX軸ラベルを入力】"
-    x_label_color = "#111111" if xlabel else "#BBBBBB"
-    ax.text(
-        0.5, -0.12 if rotate else -0.09,
-        x_label_text,
-        ha="center", va="top", fontsize=10,
-        color=x_label_color, style="italic" if not xlabel else "normal",
-    )
-
-    # ---- legend -----------------------------------------------------------
+    # ---- 凡例（グラフ右側）-----------------------------------------------
     patches = [mpatches.Patch(fc=colors[i], label=row_labels[i]) for i in range(n_rows)]
     ax.legend(
         handles=patches,
@@ -194,27 +178,31 @@ async def generate(
         fontsize=9, frameon=True, framealpha=0.95, edgecolor="#CCCCCC",
     )
 
-    # ---- axes limits & frame ----------------------------------------------
-    ax.set_xlim(-0.18, 1.03)
-    ax.set_ylim(-0.18 if rotate else -0.15, 1.06)
+    # ---- 軸ラベル ---------------------------------------------------------
+    if xlabel:
+        ax.text(0.5, -0.04, xlabel, ha="center", va="top", fontsize=10)
+
+    # ---- 軸設定 -----------------------------------------------------------
+    ax.set_xlim(0.0, 1.0)
+    ax.set_ylim(-0.02, 1.02)
     ax.axis("off")
 
-    # ---- title ------------------------------------------------------------
+    # ---- タイトル ---------------------------------------------------------
     title_text = title if title else "【ここにグラフタイトルを入力】"
     title_color = "#111111" if title else "#BBBBBB"
     fig.suptitle(
         title_text, fontsize=14, fontweight="bold",
-        color=title_color, style="italic" if not title else "normal", y=0.98,
+        color=title_color, style="italic" if not title else "normal", y=0.99,
     )
 
-    # ---- note & grand total -----------------------------------------------
+    # ---- 注記・合計n -------------------------------------------------------
     note_text = note if note else "【出典・注記をここに入力】"
     note_color = "#555555" if note else "#CCCCCC"
     fig.text(0.01, 0.005, note_text, fontsize=8, color=note_color)
     fig.text(0.99, 0.005, f"合計 n={int(grand_total)}", fontsize=8,
              color="#555555", ha="right")
 
-    plt.tight_layout(rect=[0.05, 0.05, 0.88, 0.95])
+    plt.tight_layout(rect=[0.15, 0.04, 0.85, 0.96])
 
     buf = io.BytesIO()
     fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
