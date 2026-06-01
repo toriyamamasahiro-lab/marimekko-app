@@ -7,7 +7,23 @@ import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
 import numpy as np
 import io
-import japanize_matplotlib  # noqa: F401  – sets up Japanese font automatically
+import os
+from matplotlib import font_manager as _fm
+
+def _setup_japanese_font():
+    # ビルド時にダウンロードしたフォント、なければシステムフォントを探す
+    candidates = [
+        os.path.join(os.path.dirname(__file__), "NotoSansJP.otf"),
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJKjp-Regular.otf",
+    ]
+    for path in candidates:
+        if os.path.exists(path):
+            _fm.fontManager.addfont(path)
+            plt.rcParams["font.family"] = _fm.FontProperties(fname=path).get_name()
+            return
+
+_setup_japanese_font()
 
 app = FastAPI()
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -60,11 +76,12 @@ def _parse(data: str):
     row_labels = [r[0].strip() for r in rows[1:]]
 
     try:
+        def to_float(v):
+            s = v.replace(",", "").replace(" ", "").replace("　", "").strip()
+            return float(s) if s else 0.0
+
         matrix = np.array(
-            [
-                [float(v.replace(",", "").replace(" ", "").replace("　", "")) for v in row[1:]]
-                for row in rows[1:]
-            ]
+            [[to_float(v) for v in row[1:]] for row in rows[1:]]
         )
     except ValueError as e:
         raise ValueError(f"数値に変換できないセルがあります: {e}") from e
