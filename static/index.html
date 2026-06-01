@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>マリメッコグラフ作成ツール</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Hiragino Sans", "Yu Gothic UI", sans-serif;
+    background: #F4F6F9;
+    color: #222;
+    min-height: 100vh;
+    padding: 24px 16px 48px;
+  }
+  h1 {
+    text-align: center;
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: #1a1a2e;
+  }
+  .subtitle {
+    text-align: center;
+    font-size: 0.85rem;
+    color: #666;
+    margin-bottom: 28px;
+  }
+  .card {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 28px;
+    max-width: 860px;
+    margin: 0 auto 24px;
+  }
+  .card h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 14px;
+    color: #333;
+    border-left: 4px solid #5B8DB8;
+    padding-left: 10px;
+  }
+  label {
+    display: block;
+    font-size: 0.82rem;
+    color: #555;
+    margin-bottom: 4px;
+    margin-top: 14px;
+  }
+  label:first-of-type { margin-top: 0; }
+  input[type=text] {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid #D0D5DD;
+    border-radius: 7px;
+    font-size: 0.95rem;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  input[type=text]:focus { border-color: #5B8DB8; }
+  textarea {
+    width: 100%;
+    height: 180px;
+    padding: 10px 12px;
+    border: 1px solid #D0D5DD;
+    border-radius: 7px;
+    font-size: 0.85rem;
+    font-family: monospace;
+    resize: vertical;
+    outline: none;
+    transition: border-color 0.2s;
+  }
+  textarea:focus { border-color: #5B8DB8; }
+  .hint {
+    font-size: 0.78rem;
+    color: #888;
+    margin-top: 5px;
+    line-height: 1.5;
+  }
+  .hint code {
+    background: #F0F4F8;
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-size: 0.78rem;
+    color: #444;
+  }
+  .example-table {
+    margin-top: 8px;
+    border-collapse: collapse;
+    font-size: 0.78rem;
+    color: #555;
+  }
+  .example-table td, .example-table th {
+    border: 1px solid #DDD;
+    padding: 3px 8px;
+    white-space: nowrap;
+  }
+  .example-table th { background: #F0F4F8; font-weight: 600; }
+  .btn {
+    display: block;
+    width: 100%;
+    max-width: 860px;
+    margin: 0 auto;
+    padding: 14px;
+    background: #5B8DB8;
+    color: white;
+    font-size: 1.05rem;
+    font-weight: 700;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .btn:hover { background: #4478a8; }
+  .btn:disabled { background: #AAC4DC; cursor: not-allowed; }
+  #status {
+    text-align: center;
+    margin-top: 14px;
+    font-size: 0.9rem;
+    color: #666;
+    min-height: 20px;
+  }
+  #error-msg {
+    text-align: center;
+    margin-top: 10px;
+    font-size: 0.88rem;
+    color: #C0392B;
+    display: none;
+  }
+  #result {
+    max-width: 860px;
+    margin: 24px auto 0;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 12px rgba(0,0,0,0.08);
+    padding: 20px;
+    display: none;
+  }
+  #result h2 { margin-bottom: 14px; }
+  #preview-img {
+    width: 100%;
+    border: 1px solid #EEE;
+    border-radius: 6px;
+  }
+  .dl-btn {
+    display: inline-block;
+    margin-top: 14px;
+    padding: 10px 24px;
+    background: #27AE60;
+    color: white;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.92rem;
+    transition: background 0.2s;
+  }
+  .dl-btn:hover { background: #1e8449; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 600px) { .row2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>📊 マリメッコグラフ 作成ツール</h1>
+<p class="subtitle">クロス集計表をExcelからコピペするだけでグラフを生成します</p>
+
+<form id="chartForm">
+
+  <!-- DATA INPUT -->
+  <div class="card">
+    <h2>① 集計データを貼り付け</h2>
+    <label>Excelのクロス集計表をそのままコピー＆ペースト</label>
+    <textarea id="data" name="data" placeholder="ここにコピーしたデータを貼り付けてください" required></textarea>
+    <p class="hint">
+      左上セルは空白、1行目に列カテゴリ（X軸）、1列目に行カテゴリ（凡例）、セルには<strong>実数（人数など）</strong>を入れてください。<br>
+      例：
+    </p>
+    <table class="example-table">
+      <tr><th>（空）</th><th>20代</th><th>30代</th><th>40代</th></tr>
+      <tr><td>とてもそう思う</td><td>45</td><td>32</td><td>28</td></tr>
+      <tr><td>ややそう思う</td><td>60</td><td>55</td><td>48</td></tr>
+      <tr><td>どちらとも言えない</td><td>30</td><td>40</td><td>35</td></tr>
+      <tr><td>あまりそう思わない</td><td>20</td><td>28</td><td>33</td></tr>
+      <tr><td>全くそう思わない</td><td>10</td><td>15</td><td>20</td></tr>
+    </table>
+  </div>
+
+  <!-- META FIELDS -->
+  <div class="card">
+    <h2>② グラフ情報の入力（任意）</h2>
+    <p class="hint" style="margin-bottom:12px">空欄のままにすると、グラフ上に「ここに入力してください」のガイドが表示されます。</p>
+
+    <label>グラフタイトル</label>
+    <input type="text" name="title" placeholder="例：年代別・○○に対する意識（n=500）">
+
+    <div class="row2">
+      <div>
+        <label>X軸ラベル（横軸の名前）</label>
+        <input type="text" name="xlabel" placeholder="例：年代">
+      </div>
+      <div>
+        <label>Y軸ラベル（縦軸の名前）</label>
+        <input type="text" name="ylabel" placeholder="例：回答割合">
+      </div>
+    </div>
+
+    <label>出典・注記（グラフ左下に表示）</label>
+    <input type="text" name="note" placeholder="例：出典：○○調査 2024年3月実施">
+  </div>
+
+  <button type="submit" class="btn" id="submitBtn">グラフを生成する</button>
+</form>
+
+<p id="status"></p>
+<p id="error-msg"></p>
+
+<div id="result">
+  <div class="card">
+    <h2>③ 生成されたグラフ</h2>
+    <img id="preview-img" src="" alt="マリメッコグラフ">
+    <br>
+    <a id="dl-link" class="dl-btn" href="#" download="marimekko.png">⬇ PNGをダウンロード</a>
+  </div>
+</div>
+
+<script>
+document.getElementById('chartForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+
+  const btn = document.getElementById('submitBtn');
+  const status = document.getElementById('status');
+  const errMsg = document.getElementById('error-msg');
+  const result = document.getElementById('result');
+
+  btn.disabled = true;
+  status.textContent = '生成中...';
+  errMsg.style.display = 'none';
+  result.style.display = 'none';
+
+  const formData = new FormData(e.target);
+
+  try {
+    const res = await fetch('/generate', { method: 'POST', body: formData });
+
+    if (!res.ok) {
+      const detail = await res.json().then(d => d.detail).catch(() => 'エラーが発生しました');
+      throw new Error(detail);
+    }
+
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+
+    document.getElementById('preview-img').src = url;
+    document.getElementById('dl-link').href = url;
+    result.style.display = 'block';
+    status.textContent = '✅ グラフが生成されました';
+
+    result.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  } catch (err) {
+    errMsg.textContent = '⚠ ' + err.message;
+    errMsg.style.display = 'block';
+    status.textContent = '';
+  } finally {
+    btn.disabled = false;
+  }
+});
+</script>
+</body>
+</html>
